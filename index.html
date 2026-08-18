@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Río San Francisco — Monitoreo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --mist:#eef4f3;
+    --paper:#f7fbfa;
+    --deep:#0e3d3f;
+    --teal:#106b6e;
+    --teal-light:#1c9296;
+    --sand:#e0a94f;
+    --clay:#c9622f;
+    --ink:#132524;
+    --line:#c8dbd8;
+    --ok:#3f8f5f;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--mist);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{
+    font-family:'Spectral',serif;
+    margin:0;
+    color:var(--deep);
+  }
+  .mono{font-family:'Space Mono',monospace;}
+
+  /* ---------- Onda de fondo ---------- */
+  .river-wave{
+    position:relative;
+    height:64px;
+    overflow:hidden;
+    background:var(--deep);
+  }
+  .river-wave svg{
+    position:absolute;
+    bottom:-2px;
+    width:200%;
+    height:70px;
+    animation:flow 18s linear infinite;
+  }
+  @keyframes flow{
+    from{transform:translateX(0);}
+    to{transform:translateX(-50%);}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .river-wave svg{animation:none;}
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    background:var(--deep);
+    color:var(--paper);
+    padding:36px 6vw 46px;
+  }
+  .eyebrow{
+    font-family:'Space Mono',monospace;
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--sand);
+    margin-bottom:10px;
+  }
+  header h1{
+    color:#fff;
+    font-size:clamp(28px,4vw,44px);
+    font-weight:600;
+    max-width:760px;
+    line-height:1.1;
+  }
+  header p.sub{
+    color:#bcd7d4;
+    max-width:560px;
+    margin-top:12px;
+    font-size:15px;
+    line-height:1.5;
+  }
+  .hero-stats{
+    display:flex;
+    gap:28px;
+    margin-top:32px;
+    flex-wrap:wrap;
+  }
+  .stat{
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:10px;
+    padding:16px 22px;
+    min-width:150px;
+  }
+  .stat .num{
+    font-family:'Spectral',serif;
+    font-size:32px;
+    font-weight:700;
+    color:#fff;
+    line-height:1;
+  }
+  .stat .num span{font-size:16px;font-weight:500;color:var(--sand);margin-left:2px;}
+  .stat .label{
+    font-size:12px;
+    color:#9dc3c0;
+    margin-top:6px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+
+  /* ---------- Layout general ---------- */
+  main{
+    max-width:1100px;
+    margin:0 auto;
+    padding:40px 6vw 90px;
+  }
+  section{margin-bottom:52px;}
+  .panel{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:26px 26px 22px;
+  }
+  .panel-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .panel-head h2{font-size:21px;}
+  .panel-head .desc{font-size:13px;color:#4c6664;max-width:420px;}
+
+  /* ---------- Controles de filtro ---------- */
+  .controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin-bottom:20px;
+  }
+  .segmented{
+    display:inline-flex;
+    background:var(--mist);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:3px;
+  }
+  .segmented button{
+    border:none;
+    background:transparent;
+    padding:7px 16px;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:var(--teal);
+    border-radius:999px;
+    cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .segmented button.active{
+    background:var(--teal);
+    color:#fff;
+  }
+  input[type="date"], input[type="week"], input[type="month"], input[type="text"], input[type="url"]{
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:8px 12px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--ink);
+  }
+  .toggle-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    color:var(--deep);
+    cursor:pointer;
+    user-select:none;
+  }
+  .toggle-line input{accent-color:var(--clay);}
+
+  .chart-wrap{
+    position:relative;
+    height:340px;
+  }
+  .status-msg{
+    font-size:13px;
+    color:#5a7472;
+    padding:30px 4px;
+    text-align:center;
+  }
+  .status-msg.error{color:var(--clay);}
+
+  /* ---------- Tabla ---------- */
+  details.table-toggle{margin-top:18px;}
+  details.table-toggle summary{
+    cursor:pointer;
+    font-size:13px;
+    font-weight:600;
+    color:var(--teal);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:12px;
+    font-size:12.5px;
+  }
+  table th, table td{
+    text-align:left;
+    padding:7px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  table th{
+    font-family:'Space Mono',monospace;
+    font-weight:700;
+    color:var(--deep);
+    text-transform:uppercase;
+    font-size:10.5px;
+    letter-spacing:.05em;
+  }
+
+  /* ---------- Fuentes enlazadas ---------- */
+  .source-card{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px 20px;
+    margin-bottom:18px;
+    background:#fff;
+  }
+  .source-card .source-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    margin-bottom:12px;
+  }
+  .source-card h3{font-size:16px;}
+  .remove-btn{
+    border:none;
+    background:none;
+    color:var(--clay);
+    font-size:12px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .remove-btn:hover{text-decoration:underline;}
+
+  .add-form{
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr auto;
+    gap:10px;
+    margin-top:14px;
+    align-items:end;
+  }
+  .add-form label{
+    display:block;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:#4c6664;
+    margin-bottom:5px;
+  }
+  .add-form input{width:100%;}
+  .btn-primary{
+    background:var(--teal);
+    color:#fff;
+    border:none;
+    padding:9px 18px;
+    border-radius:8px;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn-primary:hover{background:var(--teal-light);}
+  .hint{
+    font-size:12px;
+    color:#4c6664;
+    background:var(--mist);
+    border-radius:8px;
+    padding:10px 14px;
+    margin-top:14px;
+    line-height:1.5;
+  }
+  .hint code{
+    background:#fff;
+    border:1px solid var(--line);
+    padding:1px 5px;
+    border-radius:4px;
+    font-size:11px;
+  }
+  .empty-state{
+    text-align:center;
+    color:#5a7472;
+    font-size:13px;
+    padding:20px;
+    border:1px dashed var(--line);
+    border-radius:10px;
+  }
+
+  /* ---------- Pestañas de estaciones ---------- */
+  .tab-bar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-bottom:20px;
+    padding-bottom:14px;
+    border-bottom:1px solid var(--line);
+  }
+  .tab-bar button{
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--teal);
+    padding:7px 14px;
+    border-radius:999px;
+    font-family:'Inter',sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+    white-space:nowrap;
+  }
+  .tab-bar button:hover{border-color:var(--teal-light);}
+  .tab-bar button.active{
+    background:var(--teal);
+    border-color:var(--teal);
+    color:#fff;
+  }
+  .tab-bar button.compare-tab{
+    border-color:var(--clay);
+    color:var(--clay);
+  }
+  .tab-bar button.compare-tab.active{
+    background:var(--clay);
+    border-color:var(--clay);
+    color:#fff;
+  }
+  select{
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:8px 12px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--ink);
+  }
+  .station-panel{display:none;}
+  .station-panel.active{display:block;}
+  .station-meta{
+    font-size:12px;
+    color:#5a7472;
+    margin-bottom:14px;
+  }
+  .compare-picker{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:16px;
+    padding:14px;
+    background:var(--mist);
+    border-radius:10px;
+  }
+  .compare-picker label{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:12.5px;
+    color:var(--deep);
+    background:#fff;
+    border:1px solid var(--line);
+    padding:6px 11px;
+    border-radius:999px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .compare-picker input{accent-color:var(--clay);}
+  .compare-hint{
+    font-size:12px;
+    color:#5a7472;
+    margin-bottom:14px;
+  }
+  .stat-mini-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:10px;
+    margin-top:16px;
+  }
+  .stat-mini{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 14px;
+    background:#fff;
+  }
+  .stat-mini .dot{
+    display:inline-block;
+    width:9px;height:9px;
+    border-radius:50%;
+    margin-right:6px;
+  }
+  .stat-mini .name{font-size:12.5px;font-weight:600;color:var(--deep);}
+  .stat-mini .row{font-size:12px;color:#4c6664;margin-top:4px;display:flex;justify-content:space-between;}
+  footer{
+    text-align:center;
+    font-size:12px;
+    color:#6d8987;
+    padding:20px 6vw 50px;
+  }
+  @media (max-width:640px){
+    .add-form{grid-template-columns:1fr;}
+    .hero-stats{gap:14px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Monitoreo hidrológico · Sololá, Guatemala</div>
+  <h1>Río San Francisco</h1>
+  <p class="sub">Nivel de altura y temperatura del río, medidos cada 30 minutos. Los datos se leen en vivo desde la hoja de cálculo publicada — cualquier fila nueva que agregues ahí aparece aquí automáticamente.</p>
+  <div class="hero-stats" id="heroStats">
+    <div class="stat"><div class="num">—</div><div class="label">Cargando…</div></div>
+  </div>
+</header>
+
+<div class="river-wave">
+  <svg viewBox="0 0 1600 70" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,35 C 200,10 400,60 600,35 C 800,10 1000,60 1200,35 C 1400,10 1500,20 1600,35
+             L1600,70 L0,70 Z
+             M1600,35 C 1800,10 2000,60 2200,35 C 2400,10 2600,60 2800,35 C 3000,10 3100,20 3200,35
+             L3200,70 L1600,70 Z"
+          fill="#1c9296" opacity="0.55"/>
+  </svg>
+</div>
+
+<main>
+
+  <!-- ================= ALTURA DEL RÍO ================= -->
+  <section id="alturaSection">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Altura del río</h2>
+          <div class="desc">Fuente: hoja "DATOS DE ALTURA DE RIO SAN FRANCISCO 2"</div>
+        </div>
+        <label class="toggle-line">
+          <input type="checkbox" id="showTemp"> Mostrar temperatura
+        </label>
+      </div>
+
+      <div class="controls">
+        <div class="segmented" id="periodSwitch">
+          <button data-period="diario" class="active">Diario</button>
+          <button data-period="semanal">Semanal</button>
+          <button data-period="mensual">Mensual</button>
+        </div>
+        <input type="date" id="dateDiario">
+        <input type="week" id="dateSemanal" style="display:none">
+        <input type="month" id="dateMensual" style="display:none">
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="mainChart"></canvas>
+        <div id="mainStatus" class="status-msg">Cargando datos del río…</div>
+      </div>
+
+      <details class="table-toggle">
+        <summary>Ver tabla de datos</summary>
+        <div id="mainTableWrap"></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= ESTACIONES METEOROLÓGICAS ================= -->
+  <section id="estacionesSection">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Estaciones meteorológicas</h2>
+          <div class="desc">Fuente: hojas "Estaciones_2025" y "Estaciones_2026". Una pestaña por estación, más una pestaña para comparar varias a la vez.</div>
+        </div>
+      </div>
+
+      <div id="estacionesStatus" class="status-msg">Cargando estaciones…</div>
+
+      <div id="estacionesContent" style="display:none;">
+        <div class="tab-bar" id="stationTabBar"></div>
+        <div id="stationPanels"></div>
+
+        <!-- Panel de comparación -->
+        <div class="station-panel" id="panel-compare">
+          <div class="compare-hint">Selecciona dos o más estaciones para comparar la misma variable en el mismo periodo.</div>
+          <div class="compare-picker" id="comparePicker"></div>
+          <div class="controls">
+            <select id="compareVar"></select>
+            <div class="segmented" data-role="cmp-period">
+              <button data-period="diario" class="active">Diario</button>
+              <button data-period="semanal">Semanal</button>
+              <button data-period="mensual">Mensual</button>
+            </div>
+            <input type="date" data-role="cmp-dateDiario">
+            <input type="week" data-role="cmp-dateSemanal" style="display:none">
+            <input type="month" data-role="cmp-dateMensual" style="display:none">
+          </div>
+          <div class="chart-wrap">
+            <canvas id="compareChart"></canvas>
+            <div id="compareStatus" class="status-msg">Elige al menos dos estaciones.</div>
+          </div>
+          <div class="stat-mini-grid" id="compareStats"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FUENTES ADICIONALES ================= -->
+  <section id="sourcesSection">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Más hojas de datos</h2>
+          <div class="desc">Conecta otras hojas publicadas (precipitación, caudal, etc.) y se graficarán aquí con los mismos filtros de periodo. Quedan guardadas para tus próximas visitas.</div>
+        </div>
+      </div>
+
+      <div id="sourcesList"></div>
+      <div id="sourcesEmpty" class="empty-state" style="display:none;">Todavía no has conectado hojas adicionales.</div>
+
+      <div class="add-form">
+        <div>
+          <label>Nombre</label>
+          <input type="text" id="newName" placeholder="Precipitación">
+        </div>
+        <div>
+          <label>Enlace CSV publicado</label>
+          <input type="url" id="newUrl" placeholder="https://docs.google.com/.../pub?output=csv">
+        </div>
+        <div>
+          <label>Columna a graficar</label>
+          <input type="text" id="newColumn" placeholder="Precipitacion">
+        </div>
+        <button class="btn-primary" id="addSourceBtn">Agregar hoja</button>
+      </div>
+
+      <div class="hint">
+        Para obtener el enlace: en Google Sheets ve a <b>Archivo → Compartir → Publicar en la Web</b>, elige la hoja, selecciona formato <b>CSV</b> y copia la URL (termina en <code>output=csv</code>). Esa hoja debe tener una columna de fecha (por ejemplo <code>Fecha</code>) — opcionalmente <code>Hora</code> — y la columna con el valor que quieras graficar.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>Los datos se leen directamente de Google Sheets cada vez que abres esta página.</footer>
+
+<script>
+/* ============================================================
+   CONFIGURACIÓN
+   ============================================================ */
+const MAIN_CSV_URL = "https://docs.google.com/spreadsheets/d/16GnzIeagDFgY_FmXfFCbkUHYqm68C6MLXGC-b6HN7TQ/gviz/tq?tqx=out:csv&sheet=Hoja%201";
+
+// Hojas de estaciones meteorológicas (una fila por lectura, columna ESTACION identifica cada estación)
+const EST_CSV_URLS = [
+  { year: 2025, url: "https://docs.google.com/spreadsheets/d/1EHmuCfZTD1I5HYLdzmc8l24Vo7hm3RAAA7cCUe9if8A/gviz/tq?tqx=out:csv&sheet=Hoja%201" },
+  { year: 2026, url: "https://docs.google.com/spreadsheets/d/1bFSF0UnQq7tEq4x5Tm-Urmnxp0GiQSyu795sUDPObkE/gviz/tq?tqx=out:csv&sheet=Hoja%201" }
+];
+
+// Variables disponibles para graficar por estación (clave -> encabezado exacto en la hoja)
+const STATION_VARS = [
+  { key:"temp",      label:"Temperatura media (°C)",  header:"temperatura media exterior (°C)", unit:"°C",   min:-10,  max:45 },
+  { key:"hum",        label:"Humedad (%)",             header:"humedad exterior (%)",             unit:"%",    min:0,    max:100 },
+  { key:"precip",     label:"Precipitación (mm)",       header:"precipitación (mm)",               unit:"mm",   min:0,    max:300 },
+  { key:"viento",     label:"Velocidad del viento (Km/h)", header:"velocidad media del viento (Km/h)", unit:"km/h", min:0, max:200 },
+  { key:"presion",    label:"Presión (mb)",             header:"presión (mb)",                      unit:"mb",   min:700, max:1100 },
+  { key:"radiacion",  label:"Radiación solar (W/m²)",   header:"radiación solar (W/m2)",            unit:"W/m²", min:0,   max:1600 }
+];
+
+const STATION_COLORS = ["#106b6e","#c9622f","#1c9296","#e0a94f","#8e5fc9","#3f8f5f","#5a7472","#b23a48","#2f6690","#a15b1e","#4b7f52","#7a4fb5","#c94f7c","#2f8f8a","#8a6d3b","#c96b4f"];
+
+const COLORS = { altura:"#106b6e", temp:"#c9622f", extra:["#1c9296","#e0a94f","#5a7472","#3f8f5f","#8e5fc9"] };
+
+/* ============================================================
+   UTILIDADES DE FECHA / PARSEO
+   ============================================================ */
+function parseFechaHora(fechaStr, horaStr){
+  if(!fechaStr) return null;
+  const raw = fechaStr.trim();
+
+  // Formato ISO combinado: yyyy-MM-dd[ T]HH:mm:ss  (típico de Apps Script)
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if(m){
+    const [, y, mo, d, hh="0", mi="0", ss="0"] = m;
+    const dt = new Date(+y, +mo-1, +d, +hh, +mi, +ss);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // Formato dd/mm/yyyy (u otro separador) con Hora en columna aparte
+  const parts = raw.split(/[\/\-]/);
+  if(parts.length < 3) return null;
+  let [d,mo,y] = parts.map(s=>parseInt(s,10));
+  if(y < 100) y += 2000;
+  let hh=0, mi=0, ss=0;
+  if(horaStr){
+    const hparts = horaStr.trim().split(":");
+    hh = parseInt(hparts[0],10)||0;
+    mi = parseInt(hparts[1],10)||0;
+    ss = parseInt(hparts[2],10)||0;
+  }
+  const dt = new Date(y, mo-1, d, hh, mi, ss);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function toNumber(v){
+  if(v===undefined || v===null || v==="") return null;
+  const n = parseFloat(String(v).replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+function findKey(row, candidates){
+  const keys = Object.keys(row);
+  for(const cand of candidates){
+    const hit = keys.find(k => k.trim().toLowerCase() === cand.toLowerCase());
+    if(hit) return hit;
+  }
+  // coincidencia parcial
+  for(const cand of candidates){
+    const hit = keys.find(k => k.trim().toLowerCase().includes(cand.toLowerCase()));
+    if(hit) return hit;
+  }
+  return null;
+}
+
+function fmtDateLabel(dt){
+  return dt.toLocaleDateString('es-GT', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+function fmtDayMonth(dt){
+  return dt.toLocaleDateString('es-GT', {day:'2-digit', month:'short'});
+}
+function fmtTime(dt){
+  return dt.toLocaleTimeString('es-GT', {hour:'2-digit', minute:'2-digit'});
+}
+function isoDate(dt){
+  const y=dt.getFullYear(), m=String(dt.getMonth()+1).padStart(2,'0'), d=String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+/* Agrega ISO week helpers para <input type=week> */
+function getISOWeekRange(isoWeekStr){
+  // isoWeekStr: "2026-W07"
+  const [yearStr, weekStr] = isoWeekStr.split("-W");
+  const year = parseInt(yearStr,10), week = parseInt(weekStr,10);
+  const simple = new Date(year, 0, 1 + (week-1)*7);
+  const dow = simple.getDay();
+  const monday = new Date(simple);
+  const diff = (dow <= 4 ? 1 - dow : 8 - dow);
+  monday.setDate(simple.getDate() + diff);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate()+6);
+  sunday.setHours(23,59,59,999);
+  return [monday, sunday];
+}
+function defaultWeekValue(dt){
+  const d = new Date(dt);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay()+6)%7));
+  const week1 = new Date(d.getFullYear(),0,4);
+  const weekNo = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay()+6)%7))/7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+/* ============================================================
+   CARGA GENÉRICA DE CSV
+   ============================================================ */
+async function loadCsv(url){
+  const res = await fetch(url, {cache:"no-store"});
+  if(!res.ok) throw new Error("No se pudo leer la hoja (" + res.status + ")");
+  const text = await res.text();
+  const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+  return parsed.data;
+}
+
+/* Convierte filas crudas de la hoja principal en {date, altura, temp} */
+function buildMainSeries(rows){
+  const fechaKey = findKey(rows[0]||{}, ["fecha"]);
+  const horaKey = findKey(rows[0]||{}, ["hora"]);
+  const alturaKey = findKey(rows[0]||{}, ["altura"]);
+  const tempKey = findKey(rows[0]||{}, ["temperatura","temp"]);
+  const out = [];
+  for(const r of rows){
+    const dt = parseFechaHora(r[fechaKey], horaKey ? r[horaKey] : null);
+    if(!dt) continue;
+    out.push({ date: dt, altura: toNumber(r[alturaKey]), temp: tempKey ? toNumber(r[tempKey]) : null });
+  }
+  out.sort((a,b)=>a.date-b.date);
+  return out;
+}
+
+/* Convierte filas crudas de una hoja adicional en {date, value} dado el nombre de columna deseado */
+function buildGenericSeries(rows, columnName){
+  if(!rows.length) return [];
+  const fechaKey = findKey(rows[0], ["fecha"]);
+  const horaKey = findKey(rows[0], ["hora"]);
+  const valKey = findKey(rows[0], [columnName]) || Object.keys(rows[0]).find(k=>k.toLowerCase()!==((fechaKey||"").toLowerCase()) && k.toLowerCase()!==((horaKey||"").toLowerCase()));
+  const out = [];
+  for(const r of rows){
+    const dt = parseFechaHora(r[fechaKey], horaKey ? r[horaKey] : null);
+    if(!dt) continue;
+    out.push({ date: dt, value: toNumber(r[valKey]) });
+  }
+  out.sort((a,b)=>a.date-b.date);
+  return out;
+}
+
+/* ============================================================
+   AGREGACIÓN POR PERIODO
+   ============================================================ */
+// Diario: puntos crudos de un día concreto
+function filterDiario(series, dateISO, field){
+  return series.filter(p => isoDate(p.date) === dateISO)
+               .map(p => ({label: fmtTime(p.date), value: p[field]}));
+}
+// Semanal: promedio por día dentro del rango lunes-domingo
+function filterSemanal(series, weekValue, field){
+  const [start,end] = getISOWeekRange(weekValue);
+  const byDay = {};
+  for(const p of series){
+    if(p.date < start || p.date > end) continue;
+    const key = isoDate(p.date);
+    if(!byDay[key]) byDay[key] = {sum:0, n:0, date:p.date};
+    if(p[field] !== null){ byDay[key].sum += p[field]; byDay[key].n += 1; }
+  }
+  const days = [];
+  const cur = new Date(start);
+  for(let i=0;i<7;i++){
+    const key = isoDate(cur);
+    const bucket = byDay[key];
+    days.push({label: fmtDayMonth(cur), value: bucket && bucket.n ? +(bucket.sum/bucket.n).toFixed(3) : null});
+    cur.setDate(cur.getDate()+1);
+  }
+  return days;
+}
+// Mensual: promedio por día dentro del mes
+function filterMensual(series, monthValue, field){
+  const [yearStr, monthStr] = monthValue.split("-");
+  const year = parseInt(yearStr,10), month = parseInt(monthStr,10);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const byDay = {};
+  for(const p of series){
+    if(p.date.getFullYear()!==year || (p.date.getMonth()+1)!==month) continue;
+    const key = p.date.getDate();
+    if(!byDay[key]) byDay[key] = {sum:0, n:0};
+    if(p[field] !== null){ byDay[key].sum += p[field]; byDay[key].n += 1; }
+  }
+  const out = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const bucket = byDay[d];
+    out.push({label: String(d), value: bucket && bucket.n ? +(bucket.sum/bucket.n).toFixed(3) : null});
+  }
+  return out;
+}
+
+/* ============================================================
+   ESTADO GLOBAL
+   ============================================================ */
+let mainSeries = [];
+let mainChart = null;
+let currentPeriod = "diario";
+
+/* ============================================================
+   PANEL PRINCIPAL — ALTURA / TEMPERATURA
+   ============================================================ */
+async function initMain(){
+  const statusEl = document.getElementById('mainStatus');
+  try{
+    const rows = await loadCsv(MAIN_CSV_URL);
+    mainSeries = buildMainSeries(rows);
+    if(!mainSeries.length) throw new Error("La hoja no tiene filas legibles.");
+    statusEl.style.display = "none";
+
+    const last = mainSeries[mainSeries.length-1];
+    document.getElementById('dateDiario').value = isoDate(last.date);
+    document.getElementById('dateSemanal').value = defaultWeekValue(last.date);
+    document.getElementById('dateMensual').value = `${last.date.getFullYear()}-${String(last.date.getMonth()+1).padStart(2,'0')}`;
+
+    renderHero(last);
+    renderMainChart();
+  }catch(err){
+    statusEl.textContent = "No se pudieron cargar los datos: " + err.message;
+    statusEl.classList.add("error");
+    console.error(err);
+  }
+}
+
+function renderHero(last){
+  const alturas = mainSeries.map(p=>p.altura).filter(v=>v!==null);
+  const max = Math.max(...alturas);
+  const min = Math.min(...alturas);
+  const hero = document.getElementById('heroStats');
+  hero.innerHTML = `
+    <div class="stat">
+      <div class="num">${last.altura!==null ? last.altura.toFixed(3) : '—'}<span>m</span></div>
+      <div class="label">Última lectura · ${fmtDateLabel(last.date)} ${fmtTime(last.date)}</div>
+    </div>
+    <div class="stat">
+      <div class="num">${last.temp!==null ? last.temp.toFixed(1) : '—'}<span>°C</span></div>
+      <div class="label">Temperatura actual</div>
+    </div>
+    <div class="stat">
+      <div class="num">${max.toFixed(3)}<span>m</span></div>
+      <div class="label">Máxima registrada</div>
+    </div>
+    <div class="stat">
+      <div class="num">${min.toFixed(3)}<span>m</span></div>
+      <div class="label">Mínima registrada</div>
+    </div>
+  `;
+}
+
+function getMainPoints(){
+  if(currentPeriod === "diario"){
+    const iso = document.getElementById('dateDiario').value;
+    return {
+      altura: filterDiario(mainSeries, iso, 'altura'),
+      temp: filterDiario(mainSeries, iso, 'temp')
+    };
+  }else if(currentPeriod === "semanal"){
+    const wk = document.getElementById('dateSemanal').value;
+    return {
+      altura: filterSemanal(mainSeries, wk, 'altura'),
+      temp: filterSemanal(mainSeries, wk, 'temp')
+    };
+  }else{
+    const mo = document.getElementById('dateMensual').value;
+    return {
+      altura: filterMensual(mainSeries, mo, 'altura'),
+      temp: filterMensual(mainSeries, mo, 'temp')
+    };
+  }
+}
+
+function renderMainChart(){
+  const {altura, temp} = getMainPoints();
+  const showTemp = document.getElementById('showTemp').checked;
+  const labels = altura.map(p=>p.label);
+
+  const datasets = [{
+    label: "Altura del río (m)",
+    data: altura.map(p=>p.value),
+    borderColor: COLORS.altura,
+    backgroundColor: COLORS.altura+"22",
+    fill: true,
+    tension: 0.3,
+    spanGaps: true,
+    pointRadius: labels.length > 40 ? 0 : 2,
+    yAxisID: 'y'
+  }];
+  if(showTemp){
+    datasets.push({
+      label: "Temperatura (°C)",
+      data: temp.map(p=>p.value),
+      borderColor: COLORS.temp,
+      backgroundColor: COLORS.temp+"11",
+      borderDash: [5,3],
+      fill:false,
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: labels.length > 40 ? 0 : 2,
+      yAxisID: 'y1'
+    });
+  }
+
+  const statusEl = document.getElementById('mainStatus');
+  const noData = altura.every(p=>p.value===null);
+  statusEl.style.display = noData ? "block" : "none";
+  statusEl.classList.remove("error");
+  statusEl.textContent = "No hay datos para el periodo seleccionado.";
+
+  if(mainChart) mainChart.destroy();
+  mainChart = new Chart(document.getElementById('mainChart'), {
+    type:'line',
+    data:{labels, datasets},
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{display: showTemp, labels:{font:{family:'Inter'}}},
+        tooltip:{backgroundColor:'#0e3d3f'}
+      },
+      scales:{
+        x:{ticks:{maxRotation:0, autoSkip:true, font:{family:'Inter', size:11}}, grid:{display:false}},
+        y:{title:{display:true, text:'metros'}, grid:{color:'#dfe9e8'}},
+        y1:{display: showTemp, position:'right', title:{display:true, text:'°C'}, grid:{display:false}}
+      }
+    }
+  });
+
+  renderMainTable(altura, temp);
+}
+
+function renderMainTable(altura, temp){
+  const wrap = document.getElementById('mainTableWrap');
+  let html = "<table><thead><tr><th>Periodo</th><th>Altura (m)</th><th>Temperatura (°C)</th></tr></thead><tbody>";
+  for(let i=0;i<altura.length;i++){
+    html += `<tr><td>${altura[i].label}</td><td>${altura[i].value ?? '—'}</td><td>${temp[i] ? (temp[i].value ?? '—') : '—'}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+}
+
+/* Controles de periodo */
+document.getElementById('periodSwitch').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  document.querySelectorAll('#periodSwitch button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPeriod = btn.dataset.period;
+  document.getElementById('dateDiario').style.display = currentPeriod==='diario' ? 'inline-block':'none';
+  document.getElementById('dateSemanal').style.display = currentPeriod==='semanal' ? 'inline-block':'none';
+  document.getElementById('dateMensual').style.display = currentPeriod==='mensual' ? 'inline-block':'none';
+  renderMainChart();
+});
+document.getElementById('dateDiario').addEventListener('change', renderMainChart);
+document.getElementById('dateSemanal').addEventListener('change', renderMainChart);
+document.getElementById('dateMensual').addEventListener('change', renderMainChart);
+document.getElementById('showTemp').addEventListener('change', renderMainChart);
+document.getElementById('dateSemanal').style.display = 'none';
+document.getElementById('dateMensual').style.display = 'none';
+
+/* ============================================================
+   ESTACIONES METEOROLÓGICAS — pestañas por estación + comparación
+   ============================================================ */
+
+/* Convierte un valor crudo a número, descartando texto tipo fecha
+   (algunas filas de la hoja 2026 tienen números que Excel autoconvirtió
+   en fechas, ej. "9.4" -> 09/04) y valores fuera de rango físico razonable. */
+function toBoundedNumber(v, min, max){
+  if(v===undefined || v===null || v==="") return null;
+  const s = String(v).trim();
+  if(s === "---" || s === "") return null;
+  if(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(s)) return null;
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  if(/[a-zA-Z]/.test(s)) return null;
+  const n = parseFloat(s.replace(",", "."));
+  if(isNaN(n)) return null;
+  if(min!==undefined && n<min) return null;
+  if(max!==undefined && n>max) return null;
+  return n;
+}
+
+/* Agrupa las filas crudas de una hoja de estaciones por nombre de ESTACION.
+   Devuelve { nombreEstacion: [ {date, temp, hum, precip, viento, presion, radiacion}, ... ] } */
+function buildStationMap(rows){
+  const out = {};
+  if(!rows.length) return out;
+  const fechaKey = findKey(rows[0], ["fecha"]);
+  const horaKey = findKey(rows[0], ["hora"]);
+  const estKey = findKey(rows[0], ["estacion", "estación"]);
+  const varKeys = {};
+  STATION_VARS.forEach(v => { varKeys[v.key] = findKey(rows[0], [v.header]); });
+
+  for(const r of rows){
+    const estRaw = estKey ? r[estKey] : null;
+    if(!estRaw) continue;
+    const est = String(estRaw).trim();
+    if(!est) continue;
+    const dt = parseFechaHora(r[fechaKey], horaKey ? r[horaKey] : null);
+    if(!dt) continue;
+    const rec = { date: dt };
+    STATION_VARS.forEach(v => {
+      rec[v.key] = varKeys[v.key] ? toBoundedNumber(r[varKeys[v.key]], v.min, v.max) : null;
+    });
+    if(!out[est]) out[est] = [];
+    out[est].push(rec);
+  }
+  return out;
+}
+
+function mergeStationMaps(maps){
+  const merged = {};
+  for(const m of maps){
+    for(const est in m){
+      if(!merged[est]) merged[est] = [];
+      merged[est].push(...m[est]);
+    }
+  }
+  for(const est in merged) merged[est].sort((a,b)=>a.date-b.date);
+  return merged;
+}
+
+let STATIONS = {};        // nombre -> registros
+let STATION_NAMES = [];   // orden alfabético
+let stationCharts = {};   // nombre -> Chart
+let compareChart = null;
+
+async function initEstaciones(){
+  const statusEl = document.getElementById('estacionesStatus');
+  try{
+    const rowsPerYear = await Promise.all(EST_CSV_URLS.map(src => loadCsv(src.url)));
+    const maps = rowsPerYear.map(buildStationMap);
+    STATIONS = mergeStationMaps(maps);
+    STATION_NAMES = Object.keys(STATIONS).sort((a,b)=>a.localeCompare(b,'es'));
+    if(!STATION_NAMES.length) throw new Error("No se encontraron estaciones en las hojas.");
+
+    statusEl.style.display = "none";
+    document.getElementById('estacionesContent').style.display = "block";
+
+    buildStationTabs();
+    buildStationPanels();
+    buildComparePicker();
+    buildCompareVarSelect();
+    activateStationTab(STATION_NAMES[0]);
+    initCompareControls();
+  }catch(err){
+    statusEl.textContent = "No se pudieron cargar las estaciones: " + err.message;
+    statusEl.classList.add("error");
+    console.error(err);
+  }
+}
+
+function buildStationTabs(){
+  const bar = document.getElementById('stationTabBar');
+  bar.innerHTML = "";
+  STATION_NAMES.forEach(name => {
+    const btn = document.createElement('button');
+    btn.textContent = name;
+    btn.dataset.station = name;
+    btn.addEventListener('click', ()=> activateStationTab(name));
+    bar.appendChild(btn);
+  });
+  const cmpBtn = document.createElement('button');
+  cmpBtn.textContent = "⇄ Comparar estaciones";
+  cmpBtn.className = "compare-tab";
+  cmpBtn.dataset.station = "__compare__";
+  cmpBtn.addEventListener('click', ()=> activateStationTab("__compare__"));
+  bar.appendChild(cmpBtn);
+}
+
+function activateStationTab(name){
+  document.querySelectorAll('#stationTabBar button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.station === name);
+  });
+  document.querySelectorAll('.station-panel').forEach(p=>{
+    p.classList.toggle('active', p.id === (name === "__compare__" ? "panel-compare" : "panel-" + cssId(name)));
+  });
+  if(name !== "__compare__") drawStationChart(name);
+  else drawCompareChart();
+}
+
+function cssId(name){
+  return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-");
+}
+
+function buildStationPanels(){
+  const container = document.getElementById('stationPanels');
+  container.innerHTML = "";
+  STATION_NAMES.forEach((name, idx) => {
+    const recs = STATIONS[name];
+    const wrap = document.createElement('div');
+    wrap.className = "station-panel";
+    wrap.id = "panel-" + cssId(name);
+    wrap.innerHTML = `
+      <div class="station-meta">${recs.length.toLocaleString('es-GT')} lecturas · del ${fmtDateLabel(recs[0].date)} al ${fmtDateLabel(recs[recs.length-1].date)}</div>
+      <div class="controls">
+        <select data-role="var"></select>
+        <div class="segmented" data-role="period">
+          <button data-period="diario" class="active">Diario</button>
+          <button data-period="semanal">Semanal</button>
+          <button data-period="mensual">Mensual</button>
+        </div>
+        <input type="date" data-role="dateDiario">
+        <input type="week" data-role="dateSemanal" style="display:none">
+        <input type="month" data-role="dateMensual" style="display:none">
+      </div>
+      <div class="chart-wrap">
+        <canvas data-role="canvas"></canvas>
+        <div data-role="status" class="status-msg" style="display:none;">No hay datos para el periodo seleccionado.</div>
+      </div>
+      <details class="table-toggle">
+        <summary>Ver tabla de datos</summary>
+        <div data-role="table"></div>
+      </details>
+    `;
+    const varSel = wrap.querySelector('[data-role="var"]');
+    STATION_VARS.forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v.key; opt.textContent = v.label;
+      varSel.appendChild(opt);
+    });
+
+    const dDiario = wrap.querySelector('[data-role="dateDiario"]');
+    const dSemanal = wrap.querySelector('[data-role="dateSemanal"]');
+    const dMensual = wrap.querySelector('[data-role="dateMensual"]');
+    const last = recs[recs.length-1];
+    dDiario.value = isoDate(last.date);
+    dSemanal.value = defaultWeekValue(last.date);
+    dMensual.value = `${last.date.getFullYear()}-${String(last.date.getMonth()+1).padStart(2,'0')}`;
+
+    wrap.querySelector('[data-role="period"]').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button');
+      if(!btn) return;
+      wrap.querySelectorAll('[data-role="period"] button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      wrap.dataset.period = btn.dataset.period;
+      dDiario.style.display = btn.dataset.period==='diario' ? 'inline-block':'none';
+      dSemanal.style.display = btn.dataset.period==='semanal' ? 'inline-block':'none';
+      dMensual.style.display = btn.dataset.period==='mensual' ? 'inline-block':'none';
+      drawStationChart(name);
+    });
+    wrap.dataset.period = "diario";
+    dSemanal.style.display = 'none'; dMensual.style.display = 'none';
+    [dDiario, dSemanal, dMensual, varSel].forEach(el => el.addEventListener('change', ()=>drawStationChart(name)));
+
+    container.appendChild(wrap);
+  });
+}
+
+function getStationPoints(name){
+  const wrap = document.getElementById('panel-' + cssId(name));
+  const varKey = wrap.querySelector('[data-role="var"]').value;
+  const period = wrap.dataset.period;
+  const series = STATIONS[name];
+  if(period === "diario"){
+    const iso = wrap.querySelector('[data-role="dateDiario"]').value;
+    return { pts: filterDiario(series, iso, varKey), varKey };
+  }else if(period === "semanal"){
+    const wk = wrap.querySelector('[data-role="dateSemanal"]').value;
+    return { pts: filterSemanal(series, wk, varKey), varKey };
+  }else{
+    const mo = wrap.querySelector('[data-role="dateMensual"]').value;
+    return { pts: filterMensual(series, mo, varKey), varKey };
+  }
+}
+
+function drawStationChart(name){
+  const wrap = document.getElementById('panel-' + cssId(name));
+  if(!wrap) return;
+  const { pts, varKey } = getStationPoints(name);
+  const varDef = STATION_VARS.find(v=>v.key===varKey);
+  const statusEl = wrap.querySelector('[data-role="status"]');
+  const noData = pts.every(p=>p.value===null);
+  statusEl.style.display = noData ? "block" : "none";
+
+  const canvas = wrap.querySelector('[data-role="canvas"]');
+  const idx = STATION_NAMES.indexOf(name);
+  const color = STATION_COLORS[idx % STATION_COLORS.length];
+
+  if(stationCharts[name]) stationCharts[name].destroy();
+  stationCharts[name] = new Chart(canvas, {
+    type:'line',
+    data:{
+      labels: pts.map(p=>p.label),
+      datasets:[{
+        label: `${name} · ${varDef.label}`,
+        data: pts.map(p=>p.value),
+        borderColor: color,
+        backgroundColor: color+"22",
+        fill:true, tension:.3, spanGaps:true,
+        pointRadius: pts.length>40?0:2
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{backgroundColor:'#0e3d3f'} },
+      scales:{
+        x:{ticks:{maxRotation:0, autoSkip:true, font:{family:'Inter', size:11}}, grid:{display:false}},
+        y:{title:{display:true, text:varDef.unit}, grid:{color:'#dfe9e8'}}
+      }
+    }
+  });
+
+  const tableWrap = wrap.querySelector('[data-role="table"]');
+  let html = `<table><thead><tr><th>Periodo</th><th>${varDef.label}</th></tr></thead><tbody>`;
+  for(const p of pts){ html += `<tr><td>${p.label}</td><td>${p.value ?? '—'}</td></tr>`; }
+  html += "</tbody></table>";
+  tableWrap.innerHTML = html;
+}
+
+/* ---------------- Comparación entre estaciones ---------------- */
+
+function buildComparePicker(){
+  const picker = document.getElementById('comparePicker');
+  picker.innerHTML = "";
+  STATION_NAMES.forEach((name, idx) => {
+    const label = document.createElement('label');
+    const color = STATION_COLORS[idx % STATION_COLORS.length];
+    label.innerHTML = `<input type="checkbox" value="${name}" data-role="cmp-check"><span style="color:${color};font-weight:700;">●</span> ${name}`;
+    picker.appendChild(label);
+  });
+  // Selecciona las dos primeras estaciones por defecto
+  const boxes = picker.querySelectorAll('[data-role="cmp-check"]');
+  boxes.forEach((b,i)=>{ if(i<2) b.checked = true; });
+}
+
+function buildCompareVarSelect(){
+  const sel = document.getElementById('compareVar');
+  sel.innerHTML = "";
+  STATION_VARS.forEach(v=>{
+    const opt = document.createElement('option');
+    opt.value = v.key; opt.textContent = v.label;
+    sel.appendChild(opt);
+  });
+}
+
+function initCompareControls(){
+  const panel = document.getElementById('panel-compare');
+  const dDiario = panel.querySelector('[data-role="cmp-dateDiario"]');
+  const dSemanal = panel.querySelector('[data-role="cmp-dateSemanal"]');
+  const dMensual = panel.querySelector('[data-role="cmp-dateMensual"]');
+
+  // Fecha inicial: la última fecha disponible entre todas las estaciones
+  let lastDate = null;
+  STATION_NAMES.forEach(n=>{
+    const l = STATIONS[n][STATIONS[n].length-1];
+    if(l && (!lastDate || l.date > lastDate)) lastDate = l.date;
+  });
+  if(!lastDate) lastDate = new Date();
+  dDiario.value = isoDate(lastDate);
+  dSemanal.value = defaultWeekValue(lastDate);
+  dMensual.value = `${lastDate.getFullYear()}-${String(lastDate.getMonth()+1).padStart(2,'0')}`;
+
+  panel.querySelector('[data-role="cmp-period"]').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    panel.querySelectorAll('[data-role="cmp-period"] button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    panel.dataset.period = btn.dataset.period;
+    dDiario.style.display = btn.dataset.period==='diario' ? 'inline-block':'none';
+    dSemanal.style.display = btn.dataset.period==='semanal' ? 'inline-block':'none';
+    dMensual.style.display = btn.dataset.period==='mensual' ? 'inline-block':'none';
+    drawCompareChart();
+  });
+  panel.dataset.period = "diario";
+  dSemanal.style.display='none'; dMensual.style.display='none';
+
+  [dDiario, dSemanal, dMensual, document.getElementById('compareVar')].forEach(el=>{
+    el.addEventListener('change', drawCompareChart);
+  });
+  document.getElementById('comparePicker').addEventListener('change', drawCompareChart);
+}
+
+function drawCompareChart(){
+  const panel = document.getElementById('panel-compare');
+  const varKey = document.getElementById('compareVar').value;
+  const varDef = STATION_VARS.find(v=>v.key===varKey);
+  const period = panel.dataset.period;
+  const checked = Array.from(document.querySelectorAll('[data-role="cmp-check"]:checked')).map(c=>c.value);
+  const statusEl = document.getElementById('compareStatus');
+  const statsWrap = document.getElementById('compareStats');
+
+  if(checked.length < 2){
+    statusEl.style.display = "block";
+    statusEl.textContent = "Elige al menos dos estaciones.";
+    statsWrap.innerHTML = "";
+    if(compareChart){ compareChart.destroy(); compareChart = null; }
+    return;
+  }
+
+  function getPts(name){
+    const series = STATIONS[name];
+    if(period === "diario") return filterDiario(series, panel.querySelector('[data-role="cmp-dateDiario"]').value, varKey);
+    if(period === "semanal") return filterSemanal(series, panel.querySelector('[data-role="cmp-dateSemanal"]').value, varKey);
+    return filterMensual(series, panel.querySelector('[data-role="cmp-dateMensual"]').value, varKey);
+  }
+
+  const datasets = [];
+  let labels = [];
+  let anyData = false;
+  const statCards = [];
+
+  checked.forEach(name=>{
+    const idx = STATION_NAMES.indexOf(name);
+    const color = STATION_COLORS[idx % STATION_COLORS.length];
+    const pts = getPts(name);
+    if(pts.length > labels.length) labels = pts.map(p=>p.label);
+    const values = pts.map(p=>p.value).filter(v=>v!==null);
+    if(values.length) anyData = true;
+    datasets.push({
+      label: name,
+      data: pts.map(p=>p.value),
+      borderColor: color,
+      backgroundColor: color+"22",
+      fill:false, tension:.3, spanGaps:true,
+      pointRadius: pts.length>40?0:2
+    });
+    const avg = values.length ? values.reduce((a,b)=>a+b,0)/values.length : null;
+    statCards.push({ name, color, n:values.length,
+      avg: avg!==null ? avg.toFixed(2) : '—',
+      max: values.length ? Math.max(...values).toFixed(2) : '—',
+      min: values.length ? Math.min(...values).toFixed(2) : '—'
+    });
+  });
+
+  statusEl.style.display = anyData ? "none" : "block";
+  statusEl.textContent = "No hay datos para el periodo seleccionado.";
+
+  if(compareChart) compareChart.destroy();
+  compareChart = new Chart(document.getElementById('compareChart'), {
+    type:'line',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{ legend:{display:true, labels:{font:{family:'Inter'}}}, tooltip:{backgroundColor:'#0e3d3f'} },
+      scales:{
+        x:{ticks:{maxRotation:0, autoSkip:true, font:{family:'Inter', size:11}}, grid:{display:false}},
+        y:{title:{display:true, text:varDef.unit}, grid:{color:'#dfe9e8'}}
+      }
+    }
+  });
+
+  statsWrap.innerHTML = statCards.map(s => `
+    <div class="stat-mini">
+      <div class="name"><span class="dot" style="background:${s.color}"></span>${s.name}</div>
+      <div class="row"><span>Promedio</span><span>${s.avg} ${varDef.unit}</span></div>
+      <div class="row"><span>Máximo</span><span>${s.max} ${varDef.unit}</span></div>
+      <div class="row"><span>Mínimo</span><span>${s.min} ${varDef.unit}</span></div>
+    </div>
+  `).join("");
+}
+
+/* ============================================================
+   FUENTES ADICIONALES (hojas enlazadas por el usuario)
+   ============================================================ */
+const sourceCharts = {}; // id -> {chart, series}
+
+async function loadSources(){
+  let list = [];
+  try{
+    const res = await window.storage.get('linked-sheets', false);
+    if(res && res.value) list = JSON.parse(res.value);
+  }catch(e){ list = []; }
+  renderSourcesList(list);
+}
+
+async function saveSources(list){
+  try{
+    await window.storage.set('linked-sheets', JSON.stringify(list), false);
+  }catch(e){ console.error("No se pudo guardar la lista de hojas:", e); }
+}
+
+function renderSourcesList(list){
+  const container = document.getElementById('sourcesList');
+  const empty = document.getElementById('sourcesEmpty');
+  container.innerHTML = "";
+  empty.style.display = list.length ? "none" : "block";
+
+  list.forEach((src, idx) => {
+    const card = document.createElement('div');
+    card.className = "source-card";
+    card.innerHTML = `
+      <div class="source-head">
+        <h3>${src.name}</h3>
+        <button class="remove-btn" data-idx="${idx}">Quitar</button>
+      </div>
+      <div class="controls">
+        <div class="segmented" data-role="period">
+          <button data-period="diario" class="active">Diario</button>
+          <button data-period="semanal">Semanal</button>
+          <button data-period="mensual">Mensual</button>
+        </div>
+        <input type="date" data-role="dateDiario">
+        <input type="week" data-role="dateSemanal" style="display:none">
+        <input type="month" data-role="dateMensual" style="display:none">
+      </div>
+      <div class="chart-wrap" style="height:260px;">
+        <canvas data-role="canvas"></canvas>
+        <div data-role="status" class="status-msg">Cargando…</div>
+      </div>
+    `;
+    container.appendChild(card);
+    initSourceCard(card, src, idx, COLORS.extra[idx % COLORS.extra.length]);
+  });
+
+  container.querySelectorAll('.remove-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const idx = parseInt(btn.dataset.idx,10);
+      list.splice(idx,1);
+      await saveSources(list);
+      renderSourcesList(list);
+    });
+  });
+}
+
+async function initSourceCard(card, src, idx, color){
+  const statusEl = card.querySelector('[data-role="status"]');
+  const canvas = card.querySelector('[data-role="canvas"]');
+  let series = [];
+  let period = "diario";
+  let chart = null;
+
+  const dDiario = card.querySelector('[data-role="dateDiario"]');
+  const dSemanal = card.querySelector('[data-role="dateSemanal"]');
+  const dMensual = card.querySelector('[data-role="dateMensual"]');
+
+  function getPoints(){
+    if(period==="diario") return filterDiario(series, dDiario.value, 'value');
+    if(period==="semanal") return filterSemanal(series, dSemanal.value, 'value');
+    return filterMensual(series, dMensual.value, 'value');
+  }
+
+  function draw(){
+    const pts = getPoints();
+    const noData = pts.every(p=>p.value===null);
+    statusEl.style.display = noData ? "block" : "none";
+    statusEl.textContent = "No hay datos para el periodo seleccionado.";
+    if(chart) chart.destroy();
+    chart = new Chart(canvas, {
+      type:'line',
+      data:{
+        labels: pts.map(p=>p.label),
+        datasets:[{
+          label: src.name,
+          data: pts.map(p=>p.value),
+          borderColor: color,
+          backgroundColor: color+"22",
+          fill:true,
+          tension:.3,
+          spanGaps:true,
+          pointRadius: pts.length>40?0:2
+        }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{maxRotation:0, autoSkip:true, font:{family:'Inter', size:11}}, grid:{display:false}},
+          y:{grid:{color:'#dfe9e8'}}
+        }
+      }
+    });
+  }
+
+  card.querySelector('[data-role="period"]').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    card.querySelectorAll('[data-role="period"] button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    period = btn.dataset.period;
+    dDiario.style.display = period==='diario' ? 'inline-block':'none';
+    dSemanal.style.display = period==='semanal' ? 'inline-block':'none';
+    dMensual.style.display = period==='mensual' ? 'inline-block':'none';
+    draw();
+  });
+  [dDiario,dSemanal,dMensual].forEach(el=>el.addEventListener('change', draw));
+  dSemanal.style.display='none'; dMensual.style.display='none';
+
+  try{
+    const rows = await loadCsv(src.url);
+    series = buildGenericSeries(rows, src.column);
+    if(!series.length) throw new Error("No se encontraron filas legibles.");
+    const last = series[series.length-1];
+    dDiario.value = isoDate(last.date);
+    dSemanal.value = defaultWeekValue(last.date);
+    dMensual.value = `${last.date.getFullYear()}-${String(last.date.getMonth()+1).padStart(2,'0')}`;
+    draw();
+  }catch(err){
+    statusEl.classList.add("error");
+    statusEl.textContent = "No se pudo cargar esta hoja: " + err.message;
+    console.error(err);
+  }
+}
+
+document.getElementById('addSourceBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('newName').value.trim();
+  const url = document.getElementById('newUrl').value.trim();
+  const column = document.getElementById('newColumn').value.trim();
+  if(!name || !url || !column){
+    alert("Completa nombre, enlace y columna antes de agregar.");
+    return;
+  }
+  let list = [];
+  try{
+    const res = await window.storage.get('linked-sheets', false);
+    if(res && res.value) list = JSON.parse(res.value);
+  }catch(e){ list = []; }
+  list.push({name, url, column});
+  await saveSources(list);
+  document.getElementById('newName').value = "";
+  document.getElementById('newUrl').value = "";
+  document.getElementById('newColumn').value = "";
+  renderSourcesList(list);
+});
+
+/* ============================================================
+   ARRANQUE
+   ============================================================ */
+initMain();
+initEstaciones();
+loadSources();
+</script>
+</body>
+</html>
