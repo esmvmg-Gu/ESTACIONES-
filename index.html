@@ -412,6 +412,46 @@
   }
   .stat-mini .name{font-size:12.5px;font-weight:600;color:var(--deep);}
   .stat-mini .row{font-size:12px;color:#4c6664;margin-top:4px;display:flex;justify-content:space-between;}
+
+  /* ---------- Barra de estado en vivo ---------- */
+  .live-bar{
+    position:sticky;
+    top:0;
+    z-index:50;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
+    padding:10px 6vw;
+    font-size:12.5px;
+    color:var(--deep);
+  }
+  .live-dot{
+    display:inline-block;
+    width:9px;height:9px;
+    border-radius:50%;
+    background:#9db3b1;
+    flex-shrink:0;
+  }
+  .live-dot.ok{background:var(--ok); box-shadow:0 0 0 rgba(63,143,95,.5); animation:pulse-ok 2s infinite;}
+  .live-dot.loading{background:var(--sand); animation:pulse-loading 1s infinite;}
+  .live-dot.error{background:var(--clay);}
+  @keyframes pulse-ok{
+    0%{box-shadow:0 0 0 0 rgba(63,143,95,.45);}
+    70%{box-shadow:0 0 0 6px rgba(63,143,95,0);}
+    100%{box-shadow:0 0 0 0 rgba(63,143,95,0);}
+  }
+  @keyframes pulse-loading{
+    0%,100%{opacity:1;} 50%{opacity:.35;}
+  }
+  .live-bar .btn-primary{padding:6px 14px; font-size:12px;}
+  .live-bar .toggle-line{margin-left:auto; font-size:12.5px;}
+  @media (max-width:640px){
+    .live-bar{gap:10px;}
+    .live-bar .toggle-line{margin-left:0;}
+  }
   footer{
     text-align:center;
     font-size:12px;
@@ -443,6 +483,15 @@
              L3200,70 L1600,70 Z"
           fill="#1c9296" opacity="0.55"/>
   </svg>
+</div>
+
+<div class="live-bar" id="liveBar">
+  <span class="live-dot" id="liveDot"></span>
+  <span id="liveStatusText">Conectando…</span>
+  <button class="btn-primary" id="refreshNowBtn" type="button">Actualizar ahora</button>
+  <label class="toggle-line">
+    <input type="checkbox" id="autoRefreshToggle" checked> Actualización automática (cada 60 s)
+  </label>
 </div>
 
 <main>
@@ -801,6 +850,16 @@ async function initMain(){
   }
 }
 
+/* Recarga la hoja de altura sin resetear los controles de fecha que el usuario ya eligió */
+async function refreshMain(){
+  const rows = await loadCsv(MAIN_CSV_URL);
+  const newSeries = buildMainSeries(rows);
+  if(!newSeries.length) throw new Error("La hoja de altura no tiene filas legibles.");
+  mainSeries = newSeries;
+  renderHero(mainSeries[mainSeries.length-1]);
+  renderMainChart();
+}
+
 function renderHero(last){
   const alturas = mainSeries.map(p=>p.altura).filter(v=>v!==null);
   const max = Math.max(...alturas);
@@ -1025,6 +1084,43 @@ async function initEstaciones(){
     statusEl.textContent = "No se pudieron cargar las estaciones: " + err.message;
     statusEl.classList.add("error");
     console.error(err);
+  }
+}
+
+/* Recarga las hojas de estaciones sin resetear la pestaña o filtros activos.
+   Si aparece una estación nueva, reconstruye las pestañas y la mantiene activa. */
+async function refreshEstaciones(){
+  if(!STATION_NAMES.length) return; // aún no hubo carga inicial exitosa
+  const rowsPerYear = await Promise.all(EST_CSV_URLS.map(src => loadCsv(src.url)));
+  const maps = rowsPerYear.map(buildStationMap);
+  STATIONS = mergeStationMaps(maps);
+
+  const newNames = Object.keys(STATIONS).sort((a,b)=>a.localeCompare(b,'es'));
+  const activeBtn = document.querySelector('#stationTabBar button.active');
+  const activeName = activeBtn ? activeBtn.dataset.station : (STATION_NAMES[0] || "__compare__");
+
+  const stationsChanged = newNames.length !== STATION_NAMES.length ||
+    newNames.some((n,i)=> n !== STATION_NAMES[i]);
+
+  if(stationsChanged){
+    STATION_NAMES = newNames;
+    buildStationTabs();
+    buildStationPanels();
+    buildComparePicker();
+    activateStationTab(STATION_NAMES.includes(activeName) ? activeName : (STATION_NAMES[0] || "__compare__"));
+    return;
+  }
+
+  if(activeName === "__compare__"){
+    drawCompareChart();
+  }else if(activeName){
+    const wrap = document.getElementById('panel-' + cssId(activeName));
+    if(wrap){
+      const recs = STATIONS[activeName];
+      wrap.querySelector('.station-meta').textContent =
+        `${recs.length.toLocaleString('es-GT')} lecturas · del ${fmtDateLabel(recs[0].date)} al ${fmtDateLabel(recs[recs.length-1].date)}`;
+    }
+    drawStationChart(activeName);
   }
 }
 
@@ -1334,6 +1430,7 @@ function drawCompareChart(){
    FUENTES ADICIONALES (hojas enlazadas por el usuario)
    ============================================================ */
 const sourceCharts = {}; // id -> {chart, series}
+let sourceReloaders = {}; // idx -> función que recarga esa tarjeta desde su URL
 
 async function loadSources(){
   let list = [];
@@ -1350,11 +1447,19 @@ async function saveSources(list){
   }catch(e){ console.error("No se pudo guardar la lista de hojas:", e); }
 }
 
+/* Recarga todas las hojas adicionales conectadas, sin resetear sus filtros */
+async function refreshSources(){
+  const reloaders = Object.values(sourceReloaders);
+  if(!reloaders.length) return;
+  await Promise.allSettled(reloaders.map(fn => fn()));
+}
+
 function renderSourcesList(list){
   const container = document.getElementById('sourcesList');
   const empty = document.getElementById('sourcesEmpty');
   container.innerHTML = "";
   empty.style.display = list.length ? "none" : "block";
+  sourceReloaders = {};
 
   list.forEach((src, idx) => {
     const card = document.createElement('div');
@@ -1456,21 +1561,31 @@ async function initSourceCard(card, src, idx, color){
   [dDiario,dSemanal,dMensual].forEach(el=>el.addEventListener('change', draw));
   dSemanal.style.display='none'; dMensual.style.display='none';
 
-  try{
-    const rows = await loadCsv(src.url);
-    series = buildGenericSeries(rows, src.column);
-    if(!series.length) throw new Error("No se encontraron filas legibles.");
-    const last = series[series.length-1];
-    dDiario.value = isoDate(last.date);
-    dSemanal.value = defaultWeekValue(last.date);
-    dMensual.value = `${last.date.getFullYear()}-${String(last.date.getMonth()+1).padStart(2,'0')}`;
-    draw();
-  }catch(err){
-    statusEl.classList.add("error");
-    statusEl.textContent = "No se pudo cargar esta hoja: " + err.message;
-    console.error(err);
+  /* isRefresh=true: no reposiciona las fechas que el usuario ya haya elegido */
+  async function loadAndDraw(isRefresh){
+    try{
+      const rows = await loadCsv(src.url);
+      series = buildGenericSeries(rows, src.column);
+      if(!series.length) throw new Error("No se encontraron filas legibles.");
+      if(!isRefresh){
+        const last = series[series.length-1];
+        dDiario.value = isoDate(last.date);
+        dSemanal.value = defaultWeekValue(last.date);
+        dMensual.value = `${last.date.getFullYear()}-${String(last.date.getMonth()+1).padStart(2,'0')}`;
+      }
+      statusEl.classList.remove("error");
+      draw();
+    }catch(err){
+      statusEl.classList.add("error");
+      statusEl.textContent = "No se pudo cargar esta hoja: " + err.message;
+      console.error(err);
+    }
   }
+
+  sourceReloaders[idx] = () => loadAndDraw(true);
+  await loadAndDraw(false);
 }
+
 
 document.getElementById('addSourceBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('newName').value.trim();
@@ -1496,9 +1611,68 @@ document.getElementById('addSourceBtn').addEventListener('click', async ()=>{
 /* ============================================================
    ARRANQUE
    ============================================================ */
-initMain();
-initEstaciones();
-loadSources();
+/* ============================================================
+   CONEXIÓN EN TIEMPO REAL — recarga automática cada 60 s
+   ============================================================ */
+const REFRESH_INTERVAL_MS = 60000; // 60 segundos
+let autoRefreshEnabled = true;
+let refreshTimer = null;
+let lastSuccessfulRefresh = null;
+let isRefreshing = false;
+
+function setLiveStatus(state, message){
+  const dot = document.getElementById('liveDot');
+  const text = document.getElementById('liveStatusText');
+  if(!dot || !text) return;
+  dot.className = 'live-dot ' + state; // ok | loading | error
+  text.textContent = message;
+}
+
+async function refreshAll(manual){
+  if(isRefreshing) return; // evita solicitudes solapadas
+  isRefreshing = true;
+  setLiveStatus('loading', manual ? 'Actualizando…' : 'Sincronizando…');
+  try{
+    await Promise.all([refreshMain(), refreshEstaciones(), refreshSources()]);
+    lastSuccessfulRefresh = new Date();
+    setLiveStatus('ok', 'Actualizado · ' + fmtTime(lastSuccessfulRefresh));
+  }catch(err){
+    setLiveStatus('error', 'Error al actualizar: ' + err.message);
+    console.error(err);
+  }finally{
+    isRefreshing = false;
+  }
+}
+
+function scheduleAutoRefresh(){
+  if(refreshTimer) clearInterval(refreshTimer);
+  if(!autoRefreshEnabled) return;
+  refreshTimer = setInterval(()=>refreshAll(false), REFRESH_INTERVAL_MS);
+}
+
+document.getElementById('refreshNowBtn').addEventListener('click', ()=>refreshAll(true));
+document.getElementById('autoRefreshToggle').addEventListener('change', (e)=>{
+  autoRefreshEnabled = e.target.checked;
+  scheduleAutoRefresh();
+});
+
+/* Refresca el texto "hace X s" aunque no haya una recarga real en curso */
+setInterval(()=>{
+  const dot = document.getElementById('liveDot');
+  if(!dot || !dot.classList.contains('ok') || !lastSuccessfulRefresh) return;
+  const secs = Math.floor((new Date() - lastSuccessfulRefresh)/1000);
+  document.getElementById('liveStatusText').textContent =
+    secs < 5 ? 'Actualizado ahora' : `Actualizado hace ${secs}s`;
+}, 3000);
+
+async function bootstrap(){
+  setLiveStatus('loading', 'Cargando datos…');
+  await Promise.allSettled([initMain(), initEstaciones(), loadSources()]);
+  lastSuccessfulRefresh = new Date();
+  setLiveStatus('ok', 'Actualizado · ' + fmtTime(lastSuccessfulRefresh));
+  scheduleAutoRefresh();
+}
+bootstrap();
 </script>
 </body>
 </html>
